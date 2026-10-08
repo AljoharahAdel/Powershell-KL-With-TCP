@@ -1,5 +1,5 @@
 # Device B - Keystroke Capture + TCP Sender
-$deviceAIP = "172.17.2.85"
+$deviceAIP = "10.1.64.218"
 
 # Kill any previous instances of this script to avoid slowdown
 Get-Process powershell | Where-Object { $_.Id -ne $PID } | Stop-Process -Force
